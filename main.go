@@ -1,15 +1,23 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
 }
+
+var forbiddenWords = map[string]struct{} {
+		"kerfuffle": {},
+		"sharbert": {},
+		"fornax": {},
+	}
 
 func main() {
 	const port = "8080"
@@ -22,8 +30,9 @@ func main() {
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", fileServer)))
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
-	mux.HandleFunc("GET /api/metrics", apiCfg.handlerRequestCounter)
-	mux.HandleFunc("POST /api/reset", apiCfg.handlerResetCounter)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerRequestCounter)
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetCounter)
+	mux.HandleFunc("POST /api/validate_chirp", handlerValidateChirp)
 
 	
 	server := &http.Server {
@@ -52,10 +61,16 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func (cfg *apiConfig) handlerRequestCounter(w http.ResponseWriter, req *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	reqNumb := cfg.fileserverHits.Load()
 	w.WriteHeader(http.StatusOK)
-	text := fmt.Sprintf("Hits: %d\n", reqNumb)
+	 
+	text := fmt.Sprintf(`<html>
+  <body>
+    <h1>Welcome, Chirpy Admin</h1>
+    <p>Chirpy has been visited %d times!</p>
+  </body>
+</html>`, reqNumb)
 	w.Write([]byte(text))
 	
 }
@@ -67,3 +82,47 @@ func (cfg *apiConfig) handlerResetCounter(w http.ResponseWriter, req *http.Reque
 	w.Write([]byte("Request counter has been reset\n"))
 }
 
+func handlerValidateChirp(w http.ResponseWriter, req *http.Request) {
+	type parameter struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := parameter {}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 400, "Something went wrong")		
+		return
+	}
+
+	if len(params.Body) > 140 {
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	
+
+	type cleanedBody struct {
+		Clean string `json:"cleaned_body"`
+	}
+
+	clean := cleanedBody {
+		Clean: replaceForbiddenWord(params.Body),
+	}
+	
+	respondWithJSON(w, 200, clean)
+
+}
+
+func replaceForbiddenWord(body string) string {
+	words := strings.Split(body, " ")
+	
+	for i, word := range words{
+		if _,ok := forbiddenWords[strings.ToLower(word)]; ok {
+			words[i] = "****"
+		}
+	}
+
+	return strings.Join(words, " ")
+
+}

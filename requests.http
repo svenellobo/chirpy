@@ -1,0 +1,18 @@
+@baseUrl = http://localhost:8080
+
+
+### file server
+{{baseUrl}}/app
+
+### health check
+GET {{baseUrl}}/api/healthz
+
+### metrics
+GET {{baseUrl}}/admin/metrics
+
+### reset counter
+POST {{baseUrl}}/admin/reset
+
+### validate chirp
+POST {{baseUrl}}/api/validate_chirp
+
